@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autoprot"
+version = "0.1.0"
+description = "Autonomous protein language model research"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.1",
+    "numpy",
+]
+
+[project.optional-dependencies]
+agent = ["anthropic", "typer", "rich"]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+autoprot = "autoprot.run:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["autoprot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
