@@ -1,4 +1,4 @@
-"""Tests for autoprot.prepare (tokenizer, data, masking, eval)."""
+"""Tests for prepare (tokenizer, data, masking, eval)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from autoprot.prepare import (
+from prepare import (
     AA_ID_MIN,
     CLS_ID,
     EOS_ID,
@@ -177,7 +177,7 @@ class TestEvaluateLoss:
     """Tests for evaluate_loss."""
 
     def test_returns_finite(self, tiny_val_data: list[list[int]]) -> None:
-        from autoprot.train import ProteinLM
+        from train import ProteinLM
 
         device = "cpu"
         model = ProteinLM(dim=32, n_layers=2, n_heads=4, max_seq_len=128).to(device)
@@ -187,7 +187,7 @@ class TestEvaluateLoss:
         assert not float("inf") == loss
 
     def test_deterministic(self, tiny_val_data: list[list[int]]) -> None:
-        from autoprot.train import ProteinLM
+        from train import ProteinLM
 
         device = "cpu"
         model = ProteinLM(dim=32, n_layers=2, n_heads=4, max_seq_len=128).to(device)

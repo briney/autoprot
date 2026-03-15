@@ -2,6 +2,9 @@
 data/*.fasta
 data/*.fa
 results.tsv
+run.log
+CLAUDE.md
+AGENTS.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

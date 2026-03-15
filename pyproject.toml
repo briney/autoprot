@@ -15,14 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-agent = ["anthropic", "typer", "rich"]
 dev = ["pytest", "ruff"]
-
-[project.scripts]
-autoprot = "autoprot.run:app"
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.ruff]
 line-length = 100
@@ -32,10 +25,11 @@ target-version = "py311"
 select = ["E", "F", "I", "W", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["autoprot"]
+known-first-party = ["prepare", "train"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

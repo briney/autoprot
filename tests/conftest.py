@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from autoprot.prepare import encode
+from prepare import encode
 
 # Real protein sequences (short fragments from well-known proteins)
 REAL_SEQUENCES = [

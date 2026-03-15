@@ -1,12 +1,12 @@
-"""Tests for autoprot.train (model, optimizer, training loop)."""
+"""Tests for train (model, optimizer, training loop)."""
 
 from __future__ import annotations
 
 import pytest
 import torch
 
-from autoprot.prepare import PAD_VOCAB_SIZE
-from autoprot.train import (
+from prepare import PAD_VOCAB_SIZE
+from train import (
     Muon,
     ProteinLM,
     SelfAttention,

@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from autoprot.prepare import (
+from prepare import (
     PAD_ID,
     PAD_VOCAB_SIZE,
     create_dataloader,
@@ -541,3 +541,39 @@ def train(
         "steps": step,
         "params": n_params,
     }
+
+
+if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    from prepare import create_datasets
+
+    # === RUN CONFIGURATION ===
+    DATA_DIR = Path("data")
+    VAL_FRACTION = 0.1
+    TIME_BUDGET = 300  # seconds
+    DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+
+    train_data, val_data = create_datasets(
+        DATA_DIR, val_fraction=VAL_FRACTION, max_length=MAX_SEQ_LEN
+    )
+    print(
+        f"Train: {len(train_data)} sequences, Val: {len(val_data)} sequences",
+        file=sys.stderr,
+    )
+
+    t0 = time.time()
+    result = train(train_data, val_data, max_seconds=TIME_BUDGET, device=DEVICE)
+    total = time.time() - t0
+
+    # Print results in parseable format (agent greps for ^val_loss:)
+    print("---")
+    print(f"val_loss:            {result['val_loss']:.6f}")
+    print(f"train_loss:          {result['train_loss']:.6f}")
+    print(f"training_seconds:    {TIME_BUDGET}")
+    print(f"total_seconds:       {total:.1f}")
+    print(f"num_steps:           {result['steps']}")
+    print(f"num_params:          {result['params']}")
