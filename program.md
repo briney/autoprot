@@ -6,145 +6,107 @@ by iteratively modifying `train.py`.
 
 ## Setup
 
-Before starting the experiment loop:
+To set up a new experiment, work with the user to:
 
-1. Create a new branch: `git checkout -b autoprot/<descriptive-tag>`
-2. Read these files to understand the codebase:
-   - `program.md` (this file)
-   - `prepare.py` (IMMUTABLE — tokenizer, data loading, masking, evaluation)
-   - `train.py` (MUTABLE — model architecture, optimizer, training loop)
-3. Verify training data exists in `data/` (FASTA files)
-4. Create `results.tsv` with the header:
-   ```
-   echo -e "commit\tval_loss\tstatus\tdescription" > results.tsv
-   ```
-5. Run a baseline experiment (no modifications) to establish the starting point
+1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoprot/<tag>` must not already exist — this is a fresh run.
+2. **Create the branch**: `git checkout -b autoprot/<tag>` from current master.
+3. **Read the in-scope files**: The repo is small. Read these files for full context:
+   - `README.md` — repository context.
+   - `prepare.py` — fixed constants, data prep, tokenizer, dataloader, evaluation. Do not modify.
+   - `train.py` — the file you modify. Model architecture, optimizer, training loop.
+4. **Verify data exists**: Check that training data exists in `data/` (FASTA files). If not, prompt the user to provide it.
+5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
+6. **Confirm and go**: Confirm setup looks good.
 
-## Rules
+Once you get confirmation, kick off the experimentation.
 
-- **ONLY modify `train.py`.** The file `prepare.py` defines the ground-truth
-  tokenizer, masking strategy, and evaluation metric. It is immutable.
-- **Do NOT install new packages.** Only `torch` and `numpy` are available.
-- **Do NOT modify `prepare.py`, `program.md`, or any other file.**
-- **Goal:** minimize `val_loss` (cross-entropy on masked positions, lower is better).
-- **Time budget:** 5 minutes (300 seconds) of training per experiment.
-  All experiments use the same wall-clock budget, making results directly comparable.
-- **One focused change per experiment.** Don't combine multiple ideas — test them
-  individually so you know what works.
-- **Simplicity matters.** Prefer clean, simple code. A small metric gain that adds
-  50 lines of complexity is worth less than a comparable gain from a one-line change.
+## Experimentation
 
-## File Overview
+Each experiment runs on a single GPU. The training script runs for a **fixed time budget of 5 minutes** (wall clock training time, excluding startup/compilation). You launch it simply as: `uv run train.py`.
 
-| File | Role | Mutable? |
-|------|------|----------|
-| `prepare.py` | Tokenizer (25 AA vocab), ESM-2-style masking (15%), evaluation (CE loss) | NO |
-| `train.py` | Model definition, optimizer, training loop. Prints results to stdout. | YES |
-| `program.md` | This file — research objectives and agent instructions | NO |
-| `data/` | Directory containing `.fasta` / `.fa` protein sequence files | NO |
-| `results.tsv` | Experiment results log (not committed) | Output |
+**What you CAN do:**
+- Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, masking probability,etc.
 
-### train.py contract
+**What you CANNOT do:**
+- Modify `prepare.py`. It is read-only. It contains the fixed evaluation, data loading, tokenizer, and training constants (time budget, sequence length, etc).
+- Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
+- Modify the evaluation harness. The `evaluate_loss` function in `prepare.py` is the ground truth metric.
 
-- The `train()` function signature must remain:
-  `train(train_data, val_data, max_seconds, device) -> dict`
-- It must return a dict with keys: `val_loss`, `train_loss`, `steps`, `params`
-- Imports from `prepare` are allowed (the API is fixed)
-- The `if __name__ == "__main__"` block handles data loading and result printing
-- When run directly, it prints a parseable summary block to stdout:
-  ```
-  ---
-  val_loss:            X.XXXXXX
-  train_loss:          X.XXXXXX
-  training_seconds:    300
-  total_seconds:       XXX.X
-  num_steps:           XXX
-  num_params:          XXXXXXX
-  ```
+**The goal is simple: get the lowest val_loss.** Since the time budget is fixed, you don't need to worry about training time — it's always 5 minutes. Everything is fair game: change the architecture, the optimizer, the hyperparameters, the batch size, the model size. The only constraint is that the code runs without crashing and finishes within the time budget.
 
-## Experiment Loop
+**VRAM** is a soft constraint. Some increase is acceptable for meaningful val_loss gains, but it should not blow up dramatically. Obviously, increasing the VRAM usage enough that it exceeds the available GPU memory will cause the training to fail.
 
-**LOOP FOREVER:**
+**Simplicity criterion**: All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it. Conversely, removing something and getting equal or better results is a great outcome — that's a simplification win. When evaluating whether to keep a change, weigh the complexity cost against the improvement magnitude. A 0.001 val_loss improvement that adds 20 lines of hacky code? Probably not worth it. A 0.001 val_loss improvement from deleting code? Definitely keep. An improvement of ~0 but much simpler code? Keep.
 
-1. **Think** about what to try next, based on results so far and the research
-   directions below. Pick a single focused modification.
+**The first run**: Your very first run should always be to establish the baseline, so you will run the training script as is.
 
-2. **Modify `train.py`** with your proposed change.
+## Output format
 
-3. **Commit** the change:
-   ```
-   git add train.py && git commit -m "<short description of the change>"
-   ```
+Once the script finishes it prints a summary like this:
 
-4. **Run** the experiment:
-   ```
-   uv run train.py > run.log 2>&1
-   ```
+```
+val_loss:            X.XXXXXX
+train_loss:          X.XXXXXX
+training_seconds:    300
+total_seconds:       XXX.X
+num_steps:           XXX
+num_params:          XXXXXXX
+```
 
-5. **Extract** the result:
-   ```
-   grep "^val_loss:" run.log
-   ```
+Note that the script is configured to always stop after 5 minutes, so depending on the computing platform of this computer the numbers might look different. You can extract the key metric from the log file:
 
-6. **Record** the result in `results.tsv` (tab-separated):
-   ```
-   <commit-hash>\t<val_loss>\t<status>\t<description>
-   ```
-   - Status: `keep` (improved), `discard` (no improvement), or `crash` (error)
-   - For crashes, use `0.000000` as the val_loss
+```
+grep "^val_loss:" run.log
+```
 
-7. **Decide:**
-   - If `val_loss` improved over the best so far → **keep** the commit
-   - If `val_loss` is worse → **revert**: `git reset --hard HEAD~1`
-   - If training crashed → **revert**: `git reset --hard HEAD~1`
+## Logging results
 
-8. **NEVER STOP.** Once the experiment loop has begun, do NOT pause to ask the
-   human if you should continue. Do NOT summarize progress unless asked. Just
-   keep running experiments. The loop runs until the human interrupts you, period.
+When an experiment is done, log it to `results.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
 
-## Baseline Architecture
+The TSV has a header row and 5 columns:
 
-The starting model is an ESM-2-style encoder transformer:
-- 6 layers, dim=256, 8 attention heads (~6.3M parameters)
-- SwiGLU FFN with 4x multiplier
-- Rotary position embeddings (RoPE)
-- Pre-layer normalization
-- Weight-tied embedding / LM head
-- AdamW optimizer with cosine LR schedule
+```
+commit	val_loss	memory_gb	status	description
+```
 
-## Research Directions
+1. git commit hash (short, 7 chars)
+2. val_loss achieved (e.g. 1.234567) — use 0.000000 for crashes
+3. peak memory in GB, round to .1f (e.g. 12.3 — divide peak_vram_mb by 1024) — use 0.0 for crashes
+4. status: `keep`, `discard`, or `crash`
+5. short text description of what this experiment tried
 
-Consider exploring these ideas (one focused change per experiment):
+Example:
 
-### Hyperparameter Tuning
-- Learning rate: try 1e-4 to 1e-3 range
-- Warmup steps: 50–500
-- Batch size: 32, 64, 128
-- Dropout: 0.0 to 0.2
-- Weight decay: 0.0 to 0.1
+```
+commit	val_loss	memory_gb	status	description
+a1b2c3d	0.997900	44.0	keep	baseline
+b2c3d4e	0.993200	44.2	keep	increase LR to 0.04
+c3d4e5f	1.005000	44.0	discard	switch to GeLU activation
+d4e5f6g	0.000000	0.0	crash	double model width (OOM)
+```
 
-### Architecture Modifications
-- Depth vs width tradeoffs (e.g., 4 layers @ dim=384 vs 8 layers @ dim=192)
-- FFN multiplier (2x to 6x)
-- Number of attention heads
-- Pre-norm vs post-norm
+## The experiment loop
 
-### Optimizer Experiments
-- AdamW vs Muon optimizer
-- Muon learning rate and momentum tuning
-- Cosine vs linear LR decay
-- Gradient clipping values
+The experiment runs on a dedicated branch (e.g. `autoprot/mar5` or `autoprot/mar5-gpu0`).
 
-### Advanced Ideas
-- Larger masking probability (20–25%)
-- Layer-wise LR decay
-- Embedding scaling factor
-- Attention head dimension adjustments
-- Stochastic depth / layer dropout
+LOOP FOREVER:
 
-## Constraints
+1. Look at the git state: the current branch/commit we're on
+2. Tune `train.py` with an experimental idea by directly hacking the code.
+3. git commit
+4. Run the experiment: `uv run train.py > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
+5. Read out the results: `grep "^val_loss:\|^peak_vram_mb:" run.log`
+6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
+7. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
+8. If val_loss improved (lower), you "advance" the branch, keeping the git commit
+9. If val_loss is equal or worse, you git reset back to where you started
 
-- Keep model size under ~50M params for the 5-minute time budget
-- The `train()` function signature must not change
-- Import from `prepare` for tokenizer, data loading, and evaluation
-- Focus on single, testable changes per iteration
+The idea is that you are a completely autonomous researcher trying things out. If they work, keep. If they don't, discard. And you're advancing the branch so that you can iterate. If you feel like you're getting stuck in some way, you can rewind but you should probably do this very very sparingly (if ever).
+
+**Timeout**: Each experiment should take ~5 minutes total (+ a few seconds for startup and eval overhead). If a run exceeds 10 minutes, kill it and treat it as a failure (discard and revert).
+
+**Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status in the tsv, and move on.
+
+**NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — read papers referenced in the code, re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
+
+As an example use case, a user might leave you running while they sleep. If each experiment takes you ~5 minutes then you can run approx 12/hour, for a total of about 100 over the duration of the average human sleep. The user then wakes up to experimental results, all completed by you while they slept!
