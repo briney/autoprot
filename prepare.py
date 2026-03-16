@@ -1,15 +1,14 @@
-"""IMMUTABLE: Tokenizer, data loading, masking, and evaluation.
+"""Tokenizer, data loading, masking, and evaluation.
 
-This file must never be modified by the autonomous agent. It defines the
-ground-truth vocabulary, masking strategy, and evaluation metric that all
-experiments are measured against.
+Defines the ground-truth vocabulary, masking strategy, and evaluation metric
+that all experiments are measured against.
 """
 
 from __future__ import annotations
 
-import gzip
 from pathlib import Path
 
+import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
@@ -82,43 +81,39 @@ def decode(token_ids: list[int]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def load_fasta(path: Path) -> list[str]:
-    """Parse a FASTA file and return a list of amino acid sequences.
+def load_parquet(paths: list[Path]) -> list[str]:
+    """Load sequences from one or more Parquet files.
 
-    Supports plain (.fasta, .fa) and gzipped (.fasta.gz, .fa.gz) files.
+    Each file must contain columns ``sequence_id`` and ``sequence``.
+    Multiple files (shards) are concatenated into a single list.
+
+    Args:
+        paths: Parquet file paths to load and concatenate.
+
+    Returns:
+        List of amino acid sequence strings.
     """
-    sequences: list[str] = []
-    current: list[str] = []
-    opener = gzip.open if path.suffix == ".gz" else open
-    with opener(path, "rt") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith(">"):
-                if current:
-                    sequences.append("".join(current))
-                    current = []
-            else:
-                current.append(line)
-    if current:
-        sequences.append("".join(current))
-    return sequences
+    frames: list[pd.DataFrame] = []
+    for p in paths:
+        df = pd.read_parquet(p, columns=["sequence_id", "sequence"])
+        frames.append(df)
+    combined = pd.concat(frames, ignore_index=True)
+    return combined["sequence"].tolist()
 
 
-def _glob_fasta(directory: Path) -> list[Path]:
-    """Glob for all supported FASTA extensions in a directory."""
-    files: list[Path] = []
-    for ext in ("*.fasta", "*.fa", "*.fasta.gz", "*.fa.gz"):
-        files.extend(directory.glob(ext))
-    return sorted(files)
+def _glob_parquet(directory: Path) -> list[Path]:
+    """Glob for Parquet files in a directory."""
+    return sorted(directory.glob("*.parquet"))
 
 
 def create_datasets(
     data_dir: Path,
     max_length: int = 512,
 ) -> tuple[list[list[int]], list[list[int]]]:
-    """Load FASTA files from train/ and val/ subdirectories, encode, and filter.
+    """Load Parquet files from train/ and val/ subdirectories, encode, and filter.
+
+    Each Parquet file must have ``sequence_id`` and ``sequence`` columns.
+    Multiple sharded files per directory are concatenated.
 
     Args:
         data_dir: Root data directory containing ``train/`` and ``val/`` subdirs.
@@ -135,18 +130,16 @@ def create_datasets(
     if not val_dir.is_dir():
         raise FileNotFoundError(f"Validation data directory not found: {val_dir}")
 
-    train_files = _glob_fasta(train_dir)
+    train_files = _glob_parquet(train_dir)
     if not train_files:
-        raise FileNotFoundError(f"No FASTA files found in {train_dir}")
+        raise FileNotFoundError(f"No Parquet files found in {train_dir}")
 
-    val_files = _glob_fasta(val_dir)
+    val_files = _glob_parquet(val_dir)
     if not val_files:
-        raise FileNotFoundError(f"No FASTA files found in {val_dir}")
+        raise FileNotFoundError(f"No Parquet files found in {val_dir}")
 
     def _load_and_encode(files: list[Path]) -> list[list[int]]:
-        sequences: list[str] = []
-        for fp in files:
-            sequences.extend(load_fasta(fp))
+        sequences = load_parquet(files)
         encoded = [encode(seq) for seq in sequences]
         return [ids for ids in encoded if len(ids) <= max_length]
 

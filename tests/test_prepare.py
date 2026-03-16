@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import gzip
-import tempfile
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import torch
 
@@ -23,7 +22,7 @@ from prepare import (
     decode,
     encode,
     evaluate_loss,
-    load_fasta,
+    load_parquet,
 )
 
 
@@ -61,47 +60,38 @@ class TestEncoding:
         assert upper == lower
 
 
-class TestFastaLoading:
-    """Tests for load_fasta."""
+class TestParquetLoading:
+    """Tests for load_parquet."""
 
-    def test_load_fasta(self) -> None:
-        content = ">seq1\nMVLSPADK\nTNVKAAWG\n>seq2\nKETAAAKF\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(content)
-            f.flush()
-            sequences = load_fasta(Path(f.name))
+    def _write_parquet(self, path: Path, ids: list[str], seqs: list[str]) -> None:
+        df = pd.DataFrame({"sequence_id": ids, "sequence": seqs})
+        df.to_parquet(path, index=False)
 
-        assert len(sequences) == 2
-        assert sequences[0] == "MVLSPADKTNVKAAWG"
-        assert sequences[1] == "KETAAAKF"
-
-    def test_load_fasta_single_sequence(self) -> None:
-        content = ">single\nACDEFG\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".fasta", delete=False) as f:
-            f.write(content)
-            f.flush()
-            sequences = load_fasta(Path(f.name))
-
-        assert len(sequences) == 1
-        assert sequences[0] == "ACDEFG"
-
-    def test_load_fasta_gzipped(self, tmp_path: Path) -> None:
-        content = ">seq1\nMVLSPADK\n>seq2\nACDEFGHI\n"
-        gz_path = tmp_path / "test.fasta.gz"
-        with gzip.open(gz_path, "wt") as f:
-            f.write(content)
-
-        sequences = load_fasta(gz_path)
+    def test_load_parquet_single_file(self, tmp_path: Path) -> None:
+        pq_path = tmp_path / "data.parquet"
+        self._write_parquet(pq_path, ["s1", "s2"], ["MVLSPADK", "KETAAAKF"])
+        sequences = load_parquet([pq_path])
         assert len(sequences) == 2
         assert sequences[0] == "MVLSPADK"
-        assert sequences[1] == "ACDEFGHI"
+        assert sequences[1] == "KETAAAKF"
+
+    def test_load_parquet_multiple_shards(self, tmp_path: Path) -> None:
+        self._write_parquet(tmp_path / "shard0.parquet", ["s1"], ["ACDEFG"])
+        self._write_parquet(tmp_path / "shard1.parquet", ["s2"], ["GHIKLM"])
+        sequences = load_parquet(
+            [tmp_path / "shard0.parquet", tmp_path / "shard1.parquet"]
+        )
+        assert len(sequences) == 2
+        assert sequences[0] == "ACDEFG"
+        assert sequences[1] == "GHIKLM"
 
 
 class TestCreateDatasets:
     """Tests for create_datasets with train/val subdirectories."""
 
-    def _write_fasta(self, path: Path, content: str) -> None:
-        path.write_text(content)
+    def _write_parquet(self, path: Path, ids: list[str], seqs: list[str]) -> None:
+        df = pd.DataFrame({"sequence_id": ids, "sequence": seqs})
+        df.to_parquet(path, index=False)
 
     def test_create_datasets(self, tmp_path: Path) -> None:
         train_dir = tmp_path / "train"
@@ -109,14 +99,15 @@ class TestCreateDatasets:
         train_dir.mkdir()
         val_dir.mkdir()
 
-        self._write_fasta(
-            train_dir / "train.fasta",
-            ">s1\nMVLSPADK\n>s2\nACDEFGHI\n>s3\nKLMNPQRS\n"
-            ">s4\nTVWYACDE\n>s5\nFGHIKLMN\n>s6\nPQRSTVWY\n",
+        self._write_parquet(
+            train_dir / "train.parquet",
+            ["s1", "s2", "s3", "s4", "s5", "s6"],
+            ["MVLSPADK", "ACDEFGHI", "KLMNPQRS", "TVWYACDE", "FGHIKLMN", "PQRSTVWY"],
         )
-        self._write_fasta(
-            val_dir / "val.fasta",
-            ">s7\nACDEFGHI\n>s8\nKLMNPQRS\n",
+        self._write_parquet(
+            val_dir / "val.parquet",
+            ["s7", "s8"],
+            ["ACDEFGHI", "KLMNPQRS"],
         )
 
         train_data, val_data = create_datasets(tmp_path)
@@ -124,14 +115,16 @@ class TestCreateDatasets:
         assert len(val_data) == 2
 
     def test_no_train_dir_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "val").mkdir()
-        self._write_fasta(tmp_path / "val" / "v.fasta", ">s1\nACDE\n")
+        val_dir = tmp_path / "val"
+        val_dir.mkdir()
+        self._write_parquet(val_dir / "v.parquet", ["s1"], ["ACDE"])
         with pytest.raises(FileNotFoundError, match="train"):
             create_datasets(tmp_path)
 
     def test_no_val_dir_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "train").mkdir()
-        self._write_fasta(tmp_path / "train" / "t.fasta", ">s1\nACDE\n")
+        train_dir = tmp_path / "train"
+        train_dir.mkdir()
+        self._write_parquet(train_dir / "t.parquet", ["s1"], ["ACDE"])
         with pytest.raises(FileNotFoundError, match="val"):
             create_datasets(tmp_path)
 
@@ -139,47 +132,34 @@ class TestCreateDatasets:
         (tmp_path / "train").mkdir()
         val_dir = tmp_path / "val"
         val_dir.mkdir()
-        self._write_fasta(val_dir / "v.fasta", ">s1\nACDE\n")
-        with pytest.raises(FileNotFoundError, match="train"):
+        self._write_parquet(val_dir / "v.parquet", ["s1"], ["ACDE"])
+        with pytest.raises(FileNotFoundError, match="Parquet"):
             create_datasets(tmp_path)
 
     def test_no_val_files_raises(self, tmp_path: Path) -> None:
         train_dir = tmp_path / "train"
         train_dir.mkdir()
         (tmp_path / "val").mkdir()
-        self._write_fasta(train_dir / "t.fasta", ">s1\nACDE\n")
-        with pytest.raises(FileNotFoundError, match="val"):
+        self._write_parquet(train_dir / "t.parquet", ["s1"], ["ACDE"])
+        with pytest.raises(FileNotFoundError, match="Parquet"):
             create_datasets(tmp_path)
 
-    def test_multiple_files_combined(self, tmp_path: Path) -> None:
+    def test_multiple_shards_combined(self, tmp_path: Path) -> None:
         train_dir = tmp_path / "train"
         val_dir = tmp_path / "val"
         train_dir.mkdir()
         val_dir.mkdir()
 
-        self._write_fasta(train_dir / "a.fasta", ">s1\nMVLSPADK\n>s2\nACDEFGHI\n")
-        self._write_fasta(train_dir / "b.fa", ">s3\nKLMNPQRS\n")
-        self._write_fasta(val_dir / "a.fasta", ">s4\nTVWYACDE\n")
-        self._write_fasta(val_dir / "b.fa", ">s5\nFGHIKLMN\n")
+        self._write_parquet(
+            train_dir / "shard0.parquet", ["s1", "s2"], ["MVLSPADK", "ACDEFGHI"]
+        )
+        self._write_parquet(train_dir / "shard1.parquet", ["s3"], ["KLMNPQRS"])
+        self._write_parquet(val_dir / "shard0.parquet", ["s4"], ["TVWYACDE"])
+        self._write_parquet(val_dir / "shard1.parquet", ["s5"], ["FGHIKLMN"])
 
         train_data, val_data = create_datasets(tmp_path)
         assert len(train_data) == 3
         assert len(val_data) == 2
-
-    def test_gzipped_files(self, tmp_path: Path) -> None:
-        train_dir = tmp_path / "train"
-        val_dir = tmp_path / "val"
-        train_dir.mkdir()
-        val_dir.mkdir()
-
-        with gzip.open(train_dir / "train.fasta.gz", "wt") as f:
-            f.write(">s1\nMVLSPADK\n>s2\nACDEFGHI\n")
-        with gzip.open(val_dir / "val.fa.gz", "wt") as f:
-            f.write(">s3\nKLMNPQRS\n")
-
-        train_data, val_data = create_datasets(tmp_path)
-        assert len(train_data) == 2
-        assert len(val_data) == 1
 
 
 class TestMasking:
