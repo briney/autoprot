@@ -50,39 +50,43 @@ train_loss:          X.XXXXXX
 training_seconds:    300
 total_seconds:       XXX.X
 num_steps:           XXX
-num_params:          XXXXXXX
+num_params_M:        XXX.X
+peak_vram_mb:        XXXX
+total_tokens_M:      XXX.X
+depth:               X
 ```
 
 Note that the script is configured to always stop after 5 minutes, so depending on the computing platform of this computer the numbers might look different. You can extract the key metric from the log file:
 
 ```
-grep "^val_loss:" run.log
+grep "^val_loss:\|^peak_vram_mb:" run.log
 ```
 
 ## Logging results
 
 When an experiment is done, log it to `results.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
 
-The TSV has a header row and 5 columns:
+The TSV has a header row and 6 columns:
 
 ```
-commit	val_loss	memory_gb	status	description
+commit	val_loss	peak_vram_mb	memory_gb	status	description
 ```
 
 1. git commit hash (short, 7 chars)
 2. val_loss achieved (e.g. 1.234567) — use 0.000000 for crashes
-3. peak memory in GB, round to .1f (e.g. 12.3 — divide peak_vram_mb by 1024) — use 0.0 for crashes
-4. status: `keep`, `discard`, or `crash`
-5. short text description of what this experiment tried
+3. peak_vram_mb as reported by the training script — use 0 for crashes
+4. peak memory in GB, round to .1f (e.g. 12.3 — divide peak_vram_mb by 1024) — use 0.0 for crashes
+5. status: `keep`, `discard`, or `crash`
+6. short text description of what this experiment tried
 
 Example:
 
 ```
-commit	val_loss	memory_gb	status	description
-a1b2c3d	0.997900	44.0	keep	baseline
-b2c3d4e	0.993200	44.2	keep	increase LR to 0.04
-c3d4e5f	1.005000	44.0	discard	switch to GeLU activation
-d4e5f6g	0.000000	0.0	crash	double model width (OOM)
+commit	val_loss	peak_vram_mb	memory_gb	status	description
+a1b2c3d	0.997900	45056	44.0	keep	baseline
+b2c3d4e	0.993200	45261	44.2	keep	increase LR to 0.04
+c3d4e5f	1.005000	45056	44.0	discard	switch to GeLU activation
+d4e5f6g	0.000000	0	0.0	crash	double model width (OOM)
 ```
 
 ## The experiment loop

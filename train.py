@@ -469,9 +469,12 @@ def train(
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
 
     step = 0
+    total_tokens = 0
     running_loss = 0.0
     log_interval = 50
     total_estimate = max_seconds * 3  # rough step estimate for LR schedule
+    if device == "cuda":
+        torch.cuda.reset_peak_memory_stats()
     start_time = time.time()
 
     model.train()
@@ -512,6 +515,7 @@ def train(
 
             running_loss += loss.item()
             step += 1
+            total_tokens += int(attention_mask.sum())
 
             if step % log_interval == 0:
                 avg = running_loss / log_interval
@@ -526,9 +530,18 @@ def train(
     if step >= log_interval and train_loss == 0.0:
         train_loss = running_loss / log_interval if running_loss > 0 else 0.0
 
+    # Capture peak VRAM before eval (eval may also allocate)
+    peak_vram_mb = 0
+    if device == "cuda":
+        peak_vram_mb = torch.cuda.max_memory_allocated() // (1024 * 1024)
+
     # Evaluate
     val_loss = evaluate_loss(model, val_data, batch_size=BATCH_SIZE, device=device)
     logger.info(f"val_loss={val_loss:.4f} after {step} steps")
+
+    # Update peak VRAM after eval
+    if device == "cuda":
+        peak_vram_mb = torch.cuda.max_memory_allocated() // (1024 * 1024)
 
     # Cleanup
     del model
@@ -540,6 +553,9 @@ def train(
         "train_loss": train_loss,
         "steps": step,
         "params": n_params,
+        "peak_vram_mb": peak_vram_mb,
+        "total_tokens": total_tokens,
+        "depth": N_LAYERS,
     }
 
 
@@ -576,4 +592,7 @@ if __name__ == "__main__":
     print(f"training_seconds:    {TIME_BUDGET}")
     print(f"total_seconds:       {total:.1f}")
     print(f"num_steps:           {result['steps']}")
-    print(f"num_params:          {result['params']}")
+    print(f"num_params_M:        {result['params'] / 1e6:.1f}")
+    print(f"peak_vram_mb:        {result['peak_vram_mb']}")
+    print(f"total_tokens_M:      {result['total_tokens'] / 1e6:.1f}")
+    print(f"depth:               {result['depth']}")
