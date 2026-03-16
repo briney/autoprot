@@ -464,6 +464,23 @@ def train(
     # Optimizer
     optimizer = _build_optimizer(model, OPTIMIZER, LR, WEIGHT_DECAY)
 
+    # Compile model (outside training timer so compilation doesn't count)
+    model = torch.compile(model)
+
+    # Warmup forward pass to trigger compilation
+    with torch.no_grad(), torch.amp.autocast(
+        "cuda", enabled=(device == "cuda"), dtype=torch.bfloat16
+    ):
+        warmup_ids = torch.randint(
+            0, PAD_VOCAB_SIZE, (2, MAX_SEQ_LEN), device=device
+        )
+        warmup_mask = torch.ones(2, MAX_SEQ_LEN, dtype=torch.long, device=device)
+        _ = model(warmup_ids, attention_mask=warmup_mask)
+        del warmup_ids, warmup_mask
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    logger.info("torch.compile warmup complete")
+
     # Training
     loader = create_dataloader(train_data, batch_size=BATCH_SIZE, shuffle=True)
     scaler = torch.amp.GradScaler("cuda", enabled=(device == "cuda"))
