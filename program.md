@@ -45,15 +45,15 @@ Each experiment runs on a single GPU. The training script runs for a **fixed tim
 Once the script finishes it prints a summary like this:
 
 ```
-val_loss:            X.XXXXXX
-train_loss:          X.XXXXXX
-training_seconds:    300
-total_seconds:       XXX.X
-num_steps:           XXX
-num_params_M:        XXX.X
-peak_vram_mb:        XXXX
-total_tokens_M:      XXX.X
-depth:               X
+val_loss:            1.937161
+train_loss:          1.918364
+training_seconds:    300.1
+total_seconds:       310.9
+num_steps:           126
+num_params_M:        43.6
+peak_vram_mb:        45060.2
+total_tokens_M:      122.8
+depth:               8
 ```
 
 Note that the script is configured to always stop after 5 minutes, so depending on the computing platform of this computer the numbers might look different. You can extract the key metric from the log file:
