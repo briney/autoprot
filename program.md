@@ -14,7 +14,7 @@ To set up a new experiment, work with the user to:
    - `README.md` — repository context.
    - `prepare.py` — fixed constants, data prep, tokenizer, dataloader, evaluation. Do not modify.
    - `train.py` — the file you modify. Model architecture, optimizer, training loop.
-4. **Verify data exists**: Check that training data exists in `data/` (FASTA files). If not, prompt the user to provide it.
+4. **Verify data exists**: Check that training data exists in `data/train/` and `data/val/` (`.fasta`, `.fa`, `.fasta.gz`, or `.fa.gz` files). If not, prompt the user to provide it.
 5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
 6. **Confirm and go**: Confirm setup looks good.
 

@@ -26,8 +26,11 @@ experiments in a tight loop with git-based version control.
 ## Quick start
 
 ```bash
-# Put FASTA files in data/
-cp /path/to/sequences.fasta data/
+# Put FASTA files in data/train/ and data/val/
+cp /path/to/train_sequences.fasta data/train/
+cp /path/to/val_sequences.fasta data/val/
+
+# Supports .fasta, .fa, .fasta.gz, and .fa.gz files
 
 # Start the agent with program.md as context
 # (e.g., in Claude Code, just point it to program.md)

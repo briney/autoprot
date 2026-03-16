@@ -1,6 +1,6 @@
 # Autoprot
-data/*.fasta
-data/*.fa
+data/train/
+data/val/
 results.tsv
 run.log
 CLAUDE.md

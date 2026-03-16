@@ -7,7 +7,7 @@ experiments are measured against.
 
 from __future__ import annotations
 
-import random
+import gzip
 from pathlib import Path
 
 import torch
@@ -83,10 +83,14 @@ def decode(token_ids: list[int]) -> str:
 
 
 def load_fasta(path: Path) -> list[str]:
-    """Parse a FASTA file and return a list of amino acid sequences."""
+    """Parse a FASTA file and return a list of amino acid sequences.
+
+    Supports plain (.fasta, .fa) and gzipped (.fasta.gz, .fa.gz) files.
+    """
     sequences: list[str] = []
     current: list[str] = []
-    with open(path) as f:
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -102,45 +106,61 @@ def load_fasta(path: Path) -> list[str]:
     return sequences
 
 
+def _glob_fasta(directory: Path) -> list[Path]:
+    """Glob for all supported FASTA extensions in a directory."""
+    files: list[Path] = []
+    for ext in ("*.fasta", "*.fa", "*.fasta.gz", "*.fa.gz"):
+        files.extend(directory.glob(ext))
+    return sorted(files)
+
+
 def create_datasets(
     data_dir: Path,
-    val_fraction: float = 0.1,
     max_length: int = 512,
-    seed: int = 42,
 ) -> tuple[list[list[int]], list[list[int]]]:
-    """Load FASTA files, encode, filter by length, and split train/val.
+    """Load FASTA files from train/ and val/ subdirectories, encode, and filter.
 
     Args:
-        data_dir: Directory containing .fasta / .fa files.
-        val_fraction: Fraction of sequences reserved for validation.
+        data_dir: Root data directory containing ``train/`` and ``val/`` subdirs.
         max_length: Maximum sequence length (including <cls> and <eos>).
-        seed: Random seed for reproducible splitting.
 
     Returns:
         (train_data, val_data) — each a list of encoded token ID lists.
     """
-    fasta_files = sorted(data_dir.glob("*.fasta")) + sorted(data_dir.glob("*.fa"))
-    if not fasta_files:
-        raise FileNotFoundError(f"No .fasta or .fa files found in {data_dir}")
+    train_dir = data_dir / "train"
+    val_dir = data_dir / "val"
 
-    all_sequences: list[str] = []
-    for fp in fasta_files:
-        all_sequences.extend(load_fasta(fp))
+    if not train_dir.is_dir():
+        raise FileNotFoundError(f"Training data directory not found: {train_dir}")
+    if not val_dir.is_dir():
+        raise FileNotFoundError(f"Validation data directory not found: {val_dir}")
 
-    # Encode and filter by length
-    encoded = [encode(seq) for seq in all_sequences]
-    encoded = [ids for ids in encoded if len(ids) <= max_length]
+    train_files = _glob_fasta(train_dir)
+    if not train_files:
+        raise FileNotFoundError(f"No FASTA files found in {train_dir}")
 
-    if not encoded:
-        raise ValueError(f"No sequences remaining after filtering to max_length={max_length}")
+    val_files = _glob_fasta(val_dir)
+    if not val_files:
+        raise FileNotFoundError(f"No FASTA files found in {val_dir}")
 
-    # Deterministic shuffle and split
-    rng = random.Random(seed)
-    rng.shuffle(encoded)
+    def _load_and_encode(files: list[Path]) -> list[list[int]]:
+        sequences: list[str] = []
+        for fp in files:
+            sequences.extend(load_fasta(fp))
+        encoded = [encode(seq) for seq in sequences]
+        return [ids for ids in encoded if len(ids) <= max_length]
 
-    n_val = max(1, int(len(encoded) * val_fraction))
-    val_data = encoded[:n_val]
-    train_data = encoded[n_val:]
+    train_data = _load_and_encode(train_files)
+    if not train_data:
+        raise ValueError(
+            f"No training sequences remaining after filtering to max_length={max_length}"
+        )
+
+    val_data = _load_and_encode(val_files)
+    if not val_data:
+        raise ValueError(
+            f"No validation sequences remaining after filtering to max_length={max_length}"
+        )
 
     return train_data, val_data
 

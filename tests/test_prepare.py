@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import tempfile
 from pathlib import Path
 
@@ -84,25 +85,101 @@ class TestFastaLoading:
         assert len(sequences) == 1
         assert sequences[0] == "ACDEFG"
 
+    def test_load_fasta_gzipped(self, tmp_path: Path) -> None:
+        content = ">seq1\nMVLSPADK\n>seq2\nACDEFGHI\n"
+        gz_path = tmp_path / "test.fasta.gz"
+        with gzip.open(gz_path, "wt") as f:
+            f.write(content)
+
+        sequences = load_fasta(gz_path)
+        assert len(sequences) == 2
+        assert sequences[0] == "MVLSPADK"
+        assert sequences[1] == "ACDEFGHI"
+
 
 class TestCreateDatasets:
-    """Tests for create_datasets."""
+    """Tests for create_datasets with train/val subdirectories."""
+
+    def _write_fasta(self, path: Path, content: str) -> None:
+        path.write_text(content)
 
     def test_create_datasets(self, tmp_path: Path) -> None:
-        fasta = tmp_path / "test.fasta"
-        fasta.write_text(
-            ">s1\nMVLSPADK\n>s2\nACDEFGHI\n>s3\nKLMNPQRS\n"
-            ">s4\nTVWYACDE\n>s5\nFGHIKLMN\n>s6\nPQRSTVWY\n"
-            ">s7\nACDEFGHI\n>s8\nKLMNPQRS\n>s9\nTVWYACDE\n"
-            ">s10\nFGHIKLMN\n"
-        )
-        train_data, val_data = create_datasets(tmp_path, val_fraction=0.2)
-        assert len(train_data) + len(val_data) == 10
-        assert len(val_data) >= 1
+        train_dir = tmp_path / "train"
+        val_dir = tmp_path / "val"
+        train_dir.mkdir()
+        val_dir.mkdir()
 
-    def test_no_fasta_files_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(FileNotFoundError):
+        self._write_fasta(
+            train_dir / "train.fasta",
+            ">s1\nMVLSPADK\n>s2\nACDEFGHI\n>s3\nKLMNPQRS\n"
+            ">s4\nTVWYACDE\n>s5\nFGHIKLMN\n>s6\nPQRSTVWY\n",
+        )
+        self._write_fasta(
+            val_dir / "val.fasta",
+            ">s7\nACDEFGHI\n>s8\nKLMNPQRS\n",
+        )
+
+        train_data, val_data = create_datasets(tmp_path)
+        assert len(train_data) == 6
+        assert len(val_data) == 2
+
+    def test_no_train_dir_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "val").mkdir()
+        self._write_fasta(tmp_path / "val" / "v.fasta", ">s1\nACDE\n")
+        with pytest.raises(FileNotFoundError, match="train"):
             create_datasets(tmp_path)
+
+    def test_no_val_dir_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "train").mkdir()
+        self._write_fasta(tmp_path / "train" / "t.fasta", ">s1\nACDE\n")
+        with pytest.raises(FileNotFoundError, match="val"):
+            create_datasets(tmp_path)
+
+    def test_no_train_files_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "train").mkdir()
+        val_dir = tmp_path / "val"
+        val_dir.mkdir()
+        self._write_fasta(val_dir / "v.fasta", ">s1\nACDE\n")
+        with pytest.raises(FileNotFoundError, match="train"):
+            create_datasets(tmp_path)
+
+    def test_no_val_files_raises(self, tmp_path: Path) -> None:
+        train_dir = tmp_path / "train"
+        train_dir.mkdir()
+        (tmp_path / "val").mkdir()
+        self._write_fasta(train_dir / "t.fasta", ">s1\nACDE\n")
+        with pytest.raises(FileNotFoundError, match="val"):
+            create_datasets(tmp_path)
+
+    def test_multiple_files_combined(self, tmp_path: Path) -> None:
+        train_dir = tmp_path / "train"
+        val_dir = tmp_path / "val"
+        train_dir.mkdir()
+        val_dir.mkdir()
+
+        self._write_fasta(train_dir / "a.fasta", ">s1\nMVLSPADK\n>s2\nACDEFGHI\n")
+        self._write_fasta(train_dir / "b.fa", ">s3\nKLMNPQRS\n")
+        self._write_fasta(val_dir / "a.fasta", ">s4\nTVWYACDE\n")
+        self._write_fasta(val_dir / "b.fa", ">s5\nFGHIKLMN\n")
+
+        train_data, val_data = create_datasets(tmp_path)
+        assert len(train_data) == 3
+        assert len(val_data) == 2
+
+    def test_gzipped_files(self, tmp_path: Path) -> None:
+        train_dir = tmp_path / "train"
+        val_dir = tmp_path / "val"
+        train_dir.mkdir()
+        val_dir.mkdir()
+
+        with gzip.open(train_dir / "train.fasta.gz", "wt") as f:
+            f.write(">s1\nMVLSPADK\n>s2\nACDEFGHI\n")
+        with gzip.open(val_dir / "val.fa.gz", "wt") as f:
+            f.write(">s3\nKLMNPQRS\n")
+
+        train_data, val_data = create_datasets(tmp_path)
+        assert len(train_data) == 2
+        assert len(val_data) == 1
 
 
 class TestMasking:

@@ -567,15 +567,12 @@ if __name__ == "__main__":
 
     # === RUN CONFIGURATION ===
     DATA_DIR = Path("data")
-    VAL_FRACTION = 0.1
     TIME_BUDGET = 300  # seconds
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
-    train_data, val_data = create_datasets(
-        DATA_DIR, val_fraction=VAL_FRACTION, max_length=MAX_SEQ_LEN
-    )
+    train_data, val_data = create_datasets(DATA_DIR, max_length=MAX_SEQ_LEN)
     print(
         f"Train: {len(train_data)} sequences, Val: {len(val_data)} sequences",
         file=sys.stderr,
